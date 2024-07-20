@@ -21,11 +21,49 @@ pipeline {
         }
         stage('Deliver') {
             steps {
-                sh './jenkins/scripts/deliver.sh'
+                script {
+                    sh '''
+                    #!/bin/sh
+                    npm run build
+                    sleep 1
+                    npm start &
+                    echo $! > .pidfile
+                    echo "PID written to .pidfile:"
+                    cat .pidfile
+                    '''
+                }
                 input message: 'Finished using the web site? (Click "Proceed" to continue)'
-                sh './jenkins/scripts/kill.sh'
+                script {
+                    sh '''
+                    #!/bin/sh
+                    echo "Contents of .pidfile:"
+                    cat .pidfile
+
+                    # Read the PID from the .pidfile
+                    PID=$(cat .pidfile)
+
+                    # Check if the process is running
+                    if ps -p $PID > /dev/null
+                    then
+                        echo "Killing process $PID"
+                        kill $PID
+                    else
+                        echo "Process $PID does not exist"
+                    fi
+                    '''
+                }
             }
         }
-	
+        stage('OWASP Dependency-Check Vulnerabilities') {
+            steps {
+                dependencyCheck additionalArguments: ''' 
+                    -o './'
+                    -s './'
+                    -f 'ALL' 
+                    --prettyPrint''', odcInstallation: 'OWASP Dependency-Check'
+        
+                dependencyCheckPublisher pattern: 'dependency-check-report.xml'
+            }
+        }
     }
 }
